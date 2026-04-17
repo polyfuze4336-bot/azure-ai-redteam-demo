@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "foundryResourceName": {
+      "value": "${FOUNDRY_RESOURCE_NAME=mkhalib-4370-resource}"
+    },
+    "azureOpenAIDeploymentName": {
+      "value": "${AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o}"
+    },
+    "azureOpenAIEndpoint": {
+      "value": "${AZURE_OPENAI_ENDPOINT=}"
+    }
+  }
+}

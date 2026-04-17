@@ -1,0 +1,52 @@
+# Azure Developer CLI (azd) project configuration
+# Deploy using: azd up
+name: azure-ai-redteam-demo
+
+metadata:
+  template: azure-ai-redteam-demo@1.0.0
+
+# Infrastructure configuration
+infra:
+  provider: bicep
+  path: ./infra
+
+# Service definitions
+services:
+  # Backend API (FastAPI on Azure App Service)
+  api:
+    project: ./backend
+    host: appservice
+    language: python
+    
+  # Frontend (React on Azure Static Web Apps)
+  web:
+    project: ./frontend
+    host: staticwebapp
+    language: typescript
+    
+# Hooks for custom build/deploy steps
+hooks:
+  # Build frontend before deployment
+  preprovision:
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Preparing deployment..."
+    posix:
+      shell: sh
+      run: |
+        echo "Preparing deployment..."
+        
+  postprovision:
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Deployment complete!"
+        Write-Host "Backend URL: $env:SERVICE_API_URI"
+        Write-Host "Frontend URL: $env:SERVICE_WEB_URI"
+    posix:
+      shell: sh
+      run: |
+        echo "Deployment complete!"
+        echo "Backend URL: $SERVICE_API_URI"
+        echo "Frontend URL: $SERVICE_WEB_URI"
