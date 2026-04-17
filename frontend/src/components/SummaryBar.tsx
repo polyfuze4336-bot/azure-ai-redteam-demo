@@ -12,21 +12,39 @@ interface DashboardMetrics {
   totalCampaigns: number;
 }
 
-// Cache metrics in memory to persist across remounts
-let cachedMetrics: DashboardMetrics | null = null;
+const STORAGE_KEY = 'redteam_metrics';
+
+// Load from localStorage on module init
+function loadCachedMetrics(): DashboardMetrics {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Failed to load cached metrics:', e);
+  }
+  return {
+    totalAttacks: 0,
+    blockedCount: 0,
+    passedCount: 0,
+    flaggedCount: 0,
+    avgLatencyMs: 0,
+    blockRate: 0,
+    totalCampaigns: 0,
+  };
+}
+
+function saveCachedMetrics(metrics: DashboardMetrics): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(metrics));
+  } catch (e) {
+    console.error('Failed to save cached metrics:', e);
+  }
+}
 
 export default function SummaryBar() {
-  const [metrics, setMetrics] = useState<DashboardMetrics>(() => 
-    cachedMetrics || {
-      totalAttacks: 0,
-      blockedCount: 0,
-      passedCount: 0,
-      flaggedCount: 0,
-      avgLatencyMs: 0,
-      blockRate: 0,
-      totalCampaigns: 0,
-    }
-  );
+  const [metrics, setMetrics] = useState<DashboardMetrics>(loadCachedMetrics);
   
   const isMounted = useRef(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -45,8 +63,17 @@ export default function SummaryBar() {
         blockRate: stats.block_rate,
         totalCampaigns: stats.total_campaigns,
       };
-      cachedMetrics = newMetrics;
-      setMetrics(newMetrics);
+      
+      // Only update if we have real data (don't overwrite with zeros if we had data)
+      setMetrics(current => {
+        if (newMetrics.totalAttacks === 0 && current.totalAttacks > 0) {
+          // API returned 0 but we have cached data - keep cache
+          // (backend might have restarted)
+          return current;
+        }
+        saveCachedMetrics(newMetrics);
+        return newMetrics;
+      });
     } catch (error) {
       // Keep existing metrics on error - don't reset to zero
       console.error('Failed to fetch statistics:', error);
@@ -55,11 +82,9 @@ export default function SummaryBar() {
 
   useEffect(() => {
     isMounted.current = true;
-    
-    // Only fetch if we don't have cached data or it's stale
     fetchMetrics();
     
-    // Refresh every 10 seconds (reduced frequency)
+    // Refresh every 10 seconds
     intervalRef.current = setInterval(fetchMetrics, 10000);
     
     return () => {
