@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ShieldCheck, ShieldAlert, AlertTriangle, Clock, Zap, Target } from 'lucide-react';
 import { getStatistics } from '../services/api';
 
@@ -12,21 +12,31 @@ interface DashboardMetrics {
   totalCampaigns: number;
 }
 
-export default function SummaryBar() {
-  const [metrics, setMetrics] = useState<DashboardMetrics>({
-    totalAttacks: 0,
-    blockedCount: 0,
-    passedCount: 0,
-    flaggedCount: 0,
-    avgLatencyMs: 0,
-    blockRate: 0,
-    totalCampaigns: 0,
-  });
+// Cache metrics in memory to persist across remounts
+let cachedMetrics: DashboardMetrics | null = null;
 
-  const fetchMetrics = async () => {
+export default function SummaryBar() {
+  const [metrics, setMetrics] = useState<DashboardMetrics>(() => 
+    cachedMetrics || {
+      totalAttacks: 0,
+      blockedCount: 0,
+      passedCount: 0,
+      flaggedCount: 0,
+      avgLatencyMs: 0,
+      blockRate: 0,
+      totalCampaigns: 0,
+    }
+  );
+  
+  const isMounted = useRef(true);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchMetrics = useCallback(async () => {
     try {
       const stats = await getStatistics();
-      setMetrics({
+      if (!isMounted.current) return;
+      
+      const newMetrics = {
         totalAttacks: stats.total_attacks,
         blockedCount: stats.blocked_count,
         passedCount: stats.passed_count,
@@ -34,18 +44,31 @@ export default function SummaryBar() {
         avgLatencyMs: stats.avg_latency_ms,
         blockRate: stats.block_rate,
         totalCampaigns: stats.total_campaigns,
-      });
+      };
+      cachedMetrics = newMetrics;
+      setMetrics(newMetrics);
     } catch (error) {
+      // Keep existing metrics on error - don't reset to zero
       console.error('Failed to fetch statistics:', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    isMounted.current = true;
+    
+    // Only fetch if we don't have cached data or it's stale
     fetchMetrics();
-    // Refresh every 5 seconds
-    const interval = setInterval(fetchMetrics, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    
+    // Refresh every 10 seconds (reduced frequency)
+    intervalRef.current = setInterval(fetchMetrics, 10000);
+    
+    return () => {
+      isMounted.current = false;
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [fetchMetrics]);
 
   return (
     <div className="border-b border-slate-800 bg-slate-900/30">
