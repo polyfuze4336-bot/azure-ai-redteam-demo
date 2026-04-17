@@ -1,8 +1,51 @@
+import { useState, useEffect } from 'react';
 import { ShieldCheck, ShieldAlert, AlertTriangle, Clock, Zap, Target } from 'lucide-react';
-import { mockDashboardMetrics } from '../data/mockData';
+import { getStatistics } from '../services/api';
+
+interface DashboardMetrics {
+  totalAttacks: number;
+  blockedCount: number;
+  passedCount: number;
+  flaggedCount: number;
+  avgLatencyMs: number;
+  blockRate: number;
+  totalCampaigns: number;
+}
 
 export default function SummaryBar() {
-  const metrics = mockDashboardMetrics;
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
+    totalAttacks: 0,
+    blockedCount: 0,
+    passedCount: 0,
+    flaggedCount: 0,
+    avgLatencyMs: 0,
+    blockRate: 0,
+    totalCampaigns: 0,
+  });
+
+  const fetchMetrics = async () => {
+    try {
+      const stats = await getStatistics();
+      setMetrics({
+        totalAttacks: stats.total_attacks,
+        blockedCount: stats.blocked_count,
+        passedCount: stats.passed_count,
+        flaggedCount: stats.flagged_count,
+        avgLatencyMs: stats.avg_latency_ms,
+        blockRate: stats.block_rate,
+        totalCampaigns: stats.total_campaigns,
+      });
+    } catch (error) {
+      console.error('Failed to fetch statistics:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchMetrics();
+    // Refresh every 5 seconds
+    const interval = setInterval(fetchMetrics, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="border-b border-slate-800 bg-slate-900/30">
