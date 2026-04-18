@@ -39,6 +39,7 @@ import {
 } from '../data/mockData';
 import { AttackCategory, AttackResult, VerdictDetail } from '../types';
 import { runAttack, runCampaign, ApiAttackResult, ApiCampaignResult, ApiError } from '../services/api';
+import { addRun, addRuns } from '../stores';
 
 // Convert API verdict to frontend format
 function convertVerdict(apiVerdict: ApiAttackResult['shield_verdict']): VerdictDetail {
@@ -211,6 +212,9 @@ export default function AttackConsole() {
         shieldEnabled,
       });
       
+      // Add to telemetry store (single source of truth)
+      addRun(apiResult);
+      
       const frontendResult = convertApiResult(apiResult, selectedScenario || mockScenarios[0]);
       setResult(frontendResult);
     } catch (err) {
@@ -237,6 +241,11 @@ export default function AttackConsole() {
         targetModel,
         shieldEnabled,
       });
+      
+      // Add all campaign results to telemetry store
+      if (campaignResult.results && campaignResult.results.length > 0) {
+        addRuns(campaignResult.results);
+      }
       
       setCampaignSummary({ campaign: campaignResult, isVisible: true });
     } catch (err) {
