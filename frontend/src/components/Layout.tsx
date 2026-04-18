@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { Shield, Crosshair, History, GitCompare, Activity, Cloud } from 'lucide-react';
+import { Shield, Crosshair, History, GitCompare, Activity, Cloud, Bot, Monitor } from 'lucide-react';
 import SummaryBar from './SummaryBar';
 
 export default function Layout() {
@@ -32,7 +32,11 @@ export default function Layout() {
 
             {/* Navigation */}
             <nav className="flex items-center gap-2">
-              <NavLink to="/" className={navLinkClass}>
+              <NavLink to="/" end className={navLinkClass}>
+                <Monitor className="w-4 h-4" />
+                Overview
+              </NavLink>
+              <NavLink to="/console" className={navLinkClass}>
                 <Crosshair className="w-4 h-4" />
                 Attack Console
               </NavLink>
@@ -43,6 +47,10 @@ export default function Layout() {
               <NavLink to="/compare" className={navLinkClass}>
                 <GitCompare className="w-4 h-4" />
                 Comparison
+              </NavLink>
+              <NavLink to="/agents" className={navLinkClass}>
+                <Bot className="w-4 h-4" />
+                Agents
               </NavLink>
             </nav>
 

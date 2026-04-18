@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import Panel from '../components/Panel';
 import StatusBadge from '../components/StatusBadge';
+import { AgentInvokeButton } from '../components/AgentInvoke';
 import { 
   getHistory, 
   getCampaigns, 
@@ -376,6 +377,15 @@ export default function CampaignHistory() {
                       {selectedCampaign.shieldEnabled ? 'Enabled' : 'Disabled'}
                     </div>
                   </div>
+                  {/* Campaign Reporter Agent */}
+                  {selectedCampaign.status === 'completed' && selectedCampaign.isCampaign && (
+                    <AgentInvokeButton
+                      agentType="campaign_reporter"
+                      campaignId={selectedCampaign.id}
+                      variant="primary"
+                      size="md"
+                    />
+                  )}
                 </div>
               </div>
             </div>
@@ -471,13 +481,25 @@ export default function CampaignHistory() {
                     </div>
                     <span className="text-sm font-medium text-white">{selectedCampaign.passed}</span>
                   </div>
-                  <div className="flex items-center justify-between py-2">
+                  <div className="flex items-center justify-between py-2 border-b border-slate-700/50">
                     <div className="flex items-center gap-2">
                       <Activity className="w-4 h-4 text-azure-400" />
                       <span className="text-sm text-slate-300">Error Count</span>
                     </div>
                     <span className="text-sm font-medium text-white">{selectedCampaign.errorCount}</span>
                   </div>
+                  {/* Telemetry Analyst Agent */}
+                  {selectedCampaign.results.length > 0 && (
+                    <div className="pt-2">
+                      <AgentInvokeButton
+                        agentType="telemetry_analyst"
+                        campaignId={selectedCampaign.isCampaign ? selectedCampaign.id : undefined}
+                        runId={!selectedCampaign.isCampaign && selectedCampaign.results[0] ? selectedCampaign.results[0].run_id : undefined}
+                        variant="secondary"
+                        size="sm"
+                      />
+                    </div>
+                  )}
                 </div>
               </Panel>
             </div>

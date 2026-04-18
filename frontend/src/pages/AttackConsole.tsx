@@ -31,6 +31,7 @@ import Panel from '../components/Panel';
 import Select from '../components/Select';
 import Toggle from '../components/Toggle';
 import StatusBadge from '../components/StatusBadge';
+import { AgentInvokeButton } from '../components/AgentInvoke';
 import { 
   attackCategories, 
   targetModels, 
@@ -771,6 +772,28 @@ export default function AttackConsole() {
                     </div>
                     <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-purple-400" />
                   </a>
+                </div>
+
+                {/* AI Agent Analysis */}
+                <div className="mt-3 pt-3 border-t border-slate-700/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Bot className="w-3.5 h-3.5 text-azure-400" />
+                    <span className="text-xs font-medium text-azure-400 uppercase tracking-wide">AI Agent Analysis</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <AgentInvokeButton
+                      agentType="attack_observer"
+                      runId={result.id}
+                      variant="secondary"
+                      size="sm"
+                    />
+                    <AgentInvokeButton
+                      agentType="policy_explainer"
+                      runId={result.id}
+                      variant="secondary"
+                      size="sm"
+                    />
+                  </div>
                 </div>
 
                 {/* Resource Context Footer */}

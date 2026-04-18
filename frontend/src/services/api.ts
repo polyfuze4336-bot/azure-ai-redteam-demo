@@ -552,3 +552,187 @@ export async function getPyRITStrategies(): Promise<{ strategies: ApiPyRITStrate
   const response = await fetch(`${API_BASE_URL}/api/pyrit/strategies`);
   return handleResponse<{ strategies: ApiPyRITStrategy[] }>(response);
 }
+
+// =============================================================================
+// Agent Types (Lightweight Demo Agents)
+// =============================================================================
+
+export type AgentType = 
+  | 'attack_observer'
+  | 'telemetry_analyst'
+  | 'policy_explainer'
+  | 'campaign_reporter';
+
+export type AgentStatus = 'active' | 'inactive' | 'maintenance';
+
+export type InputType = 'run' | 'campaign';
+
+export type InvocationStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timeout';
+
+export interface ApiAgentDefinition {
+  agent_id: string;
+  agent_name: string;
+  agent_type: AgentType;
+  purpose: string;
+  supported_input_types: InputType[];
+  status: AgentStatus;
+  created_at: string;
+  updated_at: string;
+  version: string;
+  tags: string[];
+  config: Record<string, unknown>;
+}
+
+export interface ApiAgentInvocation {
+  invocation_id: string;
+  agent_id: string;
+  agent_name: string;
+  agent_type: AgentType;
+  linked_run_id: string | null;
+  linked_campaign_id: string | null;
+  input_summary: string;
+  input_data: Record<string, unknown>;
+  output_summary: string;
+  raw_output: string;
+  structured_output: Record<string, unknown>;
+  correlation_id: string;
+  parent_span_id: string | null;
+  span_id: string;
+  timestamp: string;
+  completed_at: string | null;
+  latency_ms: number;
+  status: InvocationStatus;
+  error_details: string | null;
+  error_code: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ApiAgentListResponse {
+  agents: ApiAgentDefinition[];
+  total: number;
+  active_count: number;
+}
+
+export interface ApiInvocationListResponse {
+  invocations: ApiAgentInvocation[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface ApiInvocationSummary {
+  total_invocations: number;
+  completed_count: number;
+  failed_count: number;
+  pending_count: number;
+  average_latency_ms: number;
+  by_agent: Record<string, number>;
+  by_status: Record<string, number>;
+}
+
+export interface ApiInvokeAgentRequest {
+  linked_run_id?: string;
+  linked_campaign_id?: string;
+  correlation_id?: string;
+  input_data?: Record<string, unknown>;
+}
+
+export interface ApiInvokeAgentResponse {
+  invocation: ApiAgentInvocation;
+  output: Record<string, unknown>;
+}
+
+// =============================================================================
+// Agent API Functions
+// =============================================================================
+
+/**
+ * List all available agents
+ */
+export async function getAgents(params?: {
+  status?: AgentStatus;
+  input_type?: InputType;
+}): Promise<ApiAgentListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set('status', params.status);
+  if (params?.input_type) searchParams.set('input_type', params.input_type);
+  
+  const url = `${API_BASE_URL}/api/agents${searchParams.toString() ? '?' + searchParams : ''}`;
+  const response = await fetch(url);
+  return handleResponse<ApiAgentListResponse>(response);
+}
+
+/**
+ * Get a specific agent
+ */
+export async function getAgent(agentId: string): Promise<ApiAgentDefinition> {
+  const response = await fetch(`${API_BASE_URL}/api/agents/${agentId}`);
+  return handleResponse<ApiAgentDefinition>(response);
+}
+
+/**
+ * Invoke an agent
+ */
+export async function invokeAgent(
+  agentId: string, 
+  params: ApiInvokeAgentRequest
+): Promise<ApiInvokeAgentResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/agents/${agentId}/invoke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  return handleResponse<ApiInvokeAgentResponse>(response);
+}
+
+/**
+ * Get invocation history
+ */
+export async function getInvocations(params?: {
+  limit?: number;
+  offset?: number;
+  status?: InvocationStatus;
+  agent_id?: string;
+}): Promise<ApiInvocationListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.limit) searchParams.set('limit', params.limit.toString());
+  if (params?.offset) searchParams.set('offset', params.offset.toString());
+  if (params?.status) searchParams.set('status', params.status);
+  if (params?.agent_id) searchParams.set('agent_id', params.agent_id);
+  
+  const url = `${API_BASE_URL}/api/agents/invocations${searchParams.toString() ? '?' + searchParams : ''}`;
+  const response = await fetch(url);
+  return handleResponse<ApiInvocationListResponse>(response);
+}
+
+/**
+ * Get invocation summary statistics
+ */
+export async function getInvocationSummary(): Promise<ApiInvocationSummary> {
+  const response = await fetch(`${API_BASE_URL}/api/agents/invocations/summary`);
+  return handleResponse<ApiInvocationSummary>(response);
+}
+
+/**
+ * Get a specific invocation
+ */
+export async function getInvocation(invocationId: string): Promise<ApiAgentInvocation> {
+  const response = await fetch(`${API_BASE_URL}/api/agents/invocations/${invocationId}`);
+  return handleResponse<ApiAgentInvocation>(response);
+}
+
+/**
+ * Get invocations for a specific run
+ */
+export async function getInvocationsByRun(runId: string): Promise<ApiAgentInvocation[]> {
+  const response = await fetch(`${API_BASE_URL}/api/agents/invocations/by-run/${runId}`);
+  return handleResponse<ApiAgentInvocation[]>(response);
+}
+
+/**
+ * Get invocations for a specific campaign
+ */
+export async function getInvocationsByCampaign(campaignId: string): Promise<ApiAgentInvocation[]> {
+  const response = await fetch(`${API_BASE_URL}/api/agents/invocations/by-campaign/${campaignId}`);
+  return handleResponse<ApiAgentInvocation[]>(response);
+}

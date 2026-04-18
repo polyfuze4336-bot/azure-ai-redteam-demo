@@ -8,6 +8,21 @@
   }
 }
 
+@layer utilities {
+  @keyframes slide-in-right {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  
+  .animate-slide-in-right {
+    animation: slide-in-right 0.2s ease-out;
+  }
+}
+
 @layer components {
   .glass-panel {
     @apply bg-slate-900/80 backdrop-blur-sm border border-slate-700/50 rounded-xl;

@@ -38,6 +38,10 @@ class TelemetryEventType(str, Enum):
     SAFETY_CHECK = "safety_check"
     TARGET_CALL = "target_call"
     EVALUATION = "evaluation"
+    # Agent invocation telemetry
+    AGENT_INVOKE_START = "agent_invoke_start"
+    AGENT_INVOKE_COMPLETE = "agent_invoke_complete"
+    AGENT_INVOKE_ERROR = "agent_invoke_error"
 
 
 class TelemetryStatus(str, Enum):
@@ -669,6 +673,144 @@ class TelemetryService:
             TelemetryStatus.CAPTURED if success else TelemetryStatus.PARTIAL,
         )
         return success
+    
+    # -------------------------------------------------------------------------
+    # Agent Invocation Tracking
+    # -------------------------------------------------------------------------
+    
+    async def track_agent_invoke_start(
+        self,
+        invocation_id: str,
+        agent_name: str,
+        agent_type: str,
+        correlation_id: str,
+        linked_run_id: Optional[str] = None,
+        linked_campaign_id: Optional[str] = None,
+        input_summary: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Track the start of an agent invocation.
+        
+        Captures the moment an agent begins processing, including
+        its linked context (run or campaign) and input details.
+        """
+        event = TelemetryEvent(
+            event_type=TelemetryEventType.AGENT_INVOKE_START,
+            correlation_id=correlation_id,
+            run_id=linked_run_id or "",
+            campaign_id=linked_campaign_id,
+            foundry_resource_name=self._foundry_resource_name,
+            deployment_name=self._default_deployment_name,
+            metadata={
+                "invocation_id": invocation_id,
+                "agent_name": agent_name,
+                "agent_type": agent_type,
+                "input_summary": input_summary,
+                **(metadata or {}),
+            },
+        )
+        
+        self._logger.info(
+            f"[AGENT_START] invocation_id={invocation_id[:8]}... | "
+            f"agent={agent_name} | type={agent_type} | "
+            f"correlation_id={correlation_id[:8]}... | "
+            f"linked_run={linked_run_id or 'none'} | "
+            f"linked_campaign={linked_campaign_id or 'none'}"
+        )
+        
+        return await self._send_to_adapters(event)
+    
+    async def track_agent_invoke_complete(
+        self,
+        invocation_id: str,
+        agent_name: str,
+        agent_type: str,
+        correlation_id: str,
+        status: str,
+        latency_ms: int,
+        linked_run_id: Optional[str] = None,
+        linked_campaign_id: Optional[str] = None,
+        output_summary: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Track the successful completion of an agent invocation.
+        
+        Captures the output summary, latency, and final status.
+        """
+        event = TelemetryEvent(
+            event_type=TelemetryEventType.AGENT_INVOKE_COMPLETE,
+            correlation_id=correlation_id,
+            run_id=linked_run_id or "",
+            campaign_id=linked_campaign_id,
+            foundry_resource_name=self._foundry_resource_name,
+            deployment_name=self._default_deployment_name,
+            overall_outcome=status,
+            latency_ms=latency_ms,
+            metadata={
+                "invocation_id": invocation_id,
+                "agent_name": agent_name,
+                "agent_type": agent_type,
+                "output_summary": output_summary[:200] if output_summary else "",
+                **(metadata or {}),
+            },
+        )
+        
+        self._logger.info(
+            f"[AGENT_COMPLETE] invocation_id={invocation_id[:8]}... | "
+            f"agent={agent_name} | status={status} | "
+            f"latency={latency_ms}ms | "
+            f"correlation_id={correlation_id[:8]}..."
+        )
+        
+        return await self._send_to_adapters(event)
+    
+    async def track_agent_invoke_error(
+        self,
+        invocation_id: str,
+        agent_name: str,
+        agent_type: str,
+        correlation_id: str,
+        error_code: str,
+        error_message: str,
+        latency_ms: int = 0,
+        linked_run_id: Optional[str] = None,
+        linked_campaign_id: Optional[str] = None,
+        error_details: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Track an agent invocation error.
+        
+        Captures error details for debugging and observability.
+        """
+        event = TelemetryEvent(
+            event_type=TelemetryEventType.AGENT_INVOKE_ERROR,
+            correlation_id=correlation_id,
+            run_id=linked_run_id or "",
+            campaign_id=linked_campaign_id,
+            foundry_resource_name=self._foundry_resource_name,
+            deployment_name=self._default_deployment_name,
+            overall_outcome="failed",
+            latency_ms=latency_ms,
+            error_code=error_code,
+            error_message=error_message,
+            error_details=error_details,
+            metadata={
+                "invocation_id": invocation_id,
+                "agent_name": agent_name,
+                "agent_type": agent_type,
+            },
+        )
+        
+        self._logger.warning(
+            f"[AGENT_ERROR] invocation_id={invocation_id[:8]}... | "
+            f"agent={agent_name} | error={error_code} | "
+            f"message={error_message[:100]} | "
+            f"correlation_id={correlation_id[:8]}..."
+        )
+        
+        return await self._send_to_adapters(event)
     
     # -------------------------------------------------------------------------
     # Internal Methods
