@@ -45,45 +45,53 @@ class KeyObservation:
 
 @dataclass
 class CampaignReport:
-    """Structured output from the Campaign Reporter Agent."""
-    
+    """Structured output from the Campaign Reporter Agent (enhanced)."""
     # Executive summary
     executive_summary: str
     headline: str
     overall_assessment: str  # strong, adequate, needs_improvement, critical
-    
+
     # Key metrics (formatted for presentation)
     total_scenarios: int
     attack_success_rate: str
     blocked_rate: str
     defense_effectiveness: str
-    
+
     # Breakdown
     outcome_breakdown: Dict[str, int]
     category_breakdown: Dict[str, int]
-    
+
+    # Enhanced context
+    top_attacked_agents: List[str]
+    policy_profiles: List[str]
+    purview_profiles: List[str]
+    defender_alert_count: int
+    purview_event_count: int
+    classification_trends: Dict[str, int]
+    high_level_posture: str
+
     # Key observations
     observations: List[KeyObservation]
     top_vulnerability: Optional[str]
     strongest_defense: Optional[str]
-    
+
     # Recommendations
     recommendations: List[str]
     priority_action: str
-    
+
     # Performance
     campaign_duration: str
     average_latency: str
-    
+
     # Demo narrative
     client_narrative: str
     slide_bullets: List[str]
-    
+
     # Metadata
     campaign_name: str
     campaign_id: str
     completed_at: str
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -96,6 +104,13 @@ class CampaignReport:
             "defense_effectiveness": self.defense_effectiveness,
             "outcome_breakdown": self.outcome_breakdown,
             "category_breakdown": self.category_breakdown,
+            "top_attacked_agents": self.top_attacked_agents,
+            "policy_profiles": self.policy_profiles,
+            "purview_profiles": self.purview_profiles,
+            "defender_alert_count": self.defender_alert_count,
+            "purview_event_count": self.purview_event_count,
+            "classification_trends": self.classification_trends,
+            "high_level_posture": self.high_level_posture,
             "observations": [o.to_dict() for o in self.observations],
             "top_vulnerability": self.top_vulnerability,
             "strongest_defense": self.strongest_defense,
@@ -472,29 +487,75 @@ class CampaignReporterExecutor:
         
         # Compute assessment
         assessment = _determine_assessment(campaign)
-        
+
         # Generate all components
         outcome_breakdown = _analyze_outcomes(campaign)
         category_breakdown = _analyze_categories(campaign)
-        
         top_vulnerability = _find_top_vulnerability(campaign)
         strongest_defense = _find_strongest_defense(campaign)
-        
         observations = _generate_observations(campaign, assessment)
         recommendations = _generate_recommendations(campaign, assessment)
         priority_action = _generate_priority_action(campaign, assessment)
-        
         executive_summary = _generate_executive_summary(campaign, assessment)
         headline = _generate_headline(campaign, assessment)
         defense_effectiveness = _compute_defense_effectiveness(campaign)
-        
         client_narrative = _generate_client_narrative(campaign, assessment, observations)
         slide_bullets = _generate_slide_bullets(campaign, assessment)
-        
+
+        # Enhanced: Aggregate top attacked agents
+        agent_counter = {}
+        policy_profiles = set()
+        purview_profiles = set()
+        classification_counter = {}
+        defender_alert_count = 0
+        purview_event_count = 0
+
+        for r in campaign.results:
+            # Top attacked agents
+            agent_id = None
+            if r.agent_context_snapshot and 'agent_id' in r.agent_context_snapshot:
+                agent_id = r.agent_context_snapshot['agent_id']
+                agent_counter[agent_id] = agent_counter.get(agent_id, 0) + 1
+            # Policy profiles
+            if r.agent_context_snapshot and 'policy_profile' in r.agent_context_snapshot:
+                profile = r.agent_context_snapshot['policy_profile']
+                if 'policy_profile_name' in profile:
+                    policy_profiles.add(profile['policy_profile_name'])
+            # Purview profiles
+            if r.agent_context_snapshot and 'purview_context' in r.agent_context_snapshot:
+                purview = r.agent_context_snapshot['purview_context']
+                if 'purview_policy_set_name' in purview:
+                    purview_profiles.add(purview['purview_policy_set_name'])
+            # Classification trends
+            if r.agent_context_snapshot and 'data_classification' in r.agent_context_snapshot:
+                label = r.agent_context_snapshot['data_classification']
+                classification_counter[label] = classification_counter.get(label, 0) + 1
+            # Defender alerts
+            defender_alert_count += len(r.linked_defender_alerts)
+            # Purview events
+            purview_event_count += len(r.linked_purview_events)
+
+        # Top attacked agents (by frequency)
+        sorted_agents = sorted(agent_counter.items(), key=lambda x: x[1], reverse=True)
+        top_attacked_agents = [f"{aid} ({count} attacks)" for aid, count in sorted_agents[:3]]
+        policy_profiles = list(policy_profiles)
+        purview_profiles = list(purview_profiles)
+        classification_trends = dict(sorted(classification_counter.items(), key=lambda x: x[1], reverse=True))
+
+        # High-level posture observation
+        if assessment == "strong":
+            high_level_posture = "Security posture is strong: most attacks blocked, no critical gaps."
+        elif assessment == "adequate":
+            high_level_posture = "Security posture is adequate: minor improvements recommended."
+        elif assessment == "needs_improvement":
+            high_level_posture = "Security posture needs improvement: some vulnerabilities found."
+        else:
+            high_level_posture = "Critical security gaps: immediate remediation required."
+
         # Format completion time
         completed_at = campaign.completed_at or datetime.utcnow()
         completed_str = completed_at.strftime("%Y-%m-%d %H:%M UTC")
-        
+
         result = CampaignReport(
             executive_summary=executive_summary,
             headline=headline,
@@ -505,6 +566,13 @@ class CampaignReporterExecutor:
             defense_effectiveness=defense_effectiveness,
             outcome_breakdown=outcome_breakdown,
             category_breakdown=category_breakdown,
+            top_attacked_agents=top_attacked_agents,
+            policy_profiles=policy_profiles,
+            purview_profiles=purview_profiles,
+            defender_alert_count=defender_alert_count,
+            purview_event_count=purview_event_count,
+            classification_trends=classification_trends,
+            high_level_posture=high_level_posture,
             observations=observations,
             top_vulnerability=top_vulnerability,
             strongest_defense=strongest_defense,

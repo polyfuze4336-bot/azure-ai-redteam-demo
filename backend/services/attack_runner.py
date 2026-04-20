@@ -35,6 +35,7 @@ from .scenarios import get_scenario_service
 from .safety_layer import get_safety_layer, SafetyCheckResult, ShieldVerdict
 from .target_connector import get_target_connector, ConnectorResponse, TargetType
 from .evaluator import get_evaluator_service, EvaluatorOutcome, EvaluationResult
+from .policy_modifiers import compute_policy_modifiers, AggregatedModifiers
 
 logger = get_logger("attack_runner")
 
@@ -81,6 +82,64 @@ class AttackRunner:
         self._settings = get_settings()
         self._telemetry = get_telemetry_service()
     
+    def _get_agent_context_snapshot(self, agent_id: str) -> Optional[dict]:
+        """
+        Fetch agent profile and create a snapshot of its context for run persistence.
+        
+        Returns a dict containing:
+        - agent_name, agent_id, status
+        - policy_profile snapshot
+        - purview_context snapshot
+        - data_classification
+        """
+        try:
+            from lifecycle import get_lifecycle_service
+            lifecycle_service = get_lifecycle_service()
+            
+            # Get agent with resolved policy/purview
+            agent = lifecycle_service.get_agent_profile(agent_id, resolve_references=True)
+            if not agent:
+                logger.warning(f"Agent {agent_id} not found for context snapshot")
+                return None
+            
+            snapshot = {
+                "agent_id": agent.agent_id,
+                "agent_name": agent.agent_name,
+                "status": agent.status.value,
+                "data_classification": agent.data_classification.value,
+                "model_name": agent.model_name,
+                "deployment_name": agent.deployment_name,
+                "foundry_resource_name": agent.foundry_resource_name,
+                "monitoring_enabled": agent.monitoring_enabled,
+                "defender_integration_enabled": agent.defender_integration_enabled,
+            }
+            
+            # Add policy profile snapshot
+            if agent.resolved_policy:
+                snapshot["policy_profile"] = {
+                    "policy_profile_id": agent.resolved_policy.policy_profile_id,
+                    "policy_profile_name": agent.resolved_policy.policy_profile_name,
+                    "content_filter_level": agent.resolved_policy.content_filter_level.value,
+                    "prompt_shield_enabled": agent.resolved_policy.prompt_shield_enabled,
+                    "sensitive_data_handling": agent.resolved_policy.sensitive_data_handling.value,
+                    "logging_level": agent.resolved_policy.logging_level.value,
+                    "blocked_categories": agent.resolved_policy.blocked_categories,
+                }
+            
+            # Add Purview governance context snapshot
+            if agent.resolved_purview_context:
+                snapshot["purview_context"] = {
+                    "purview_policy_set_id": agent.resolved_purview_context.purview_policy_set_id,
+                    "purview_policy_set_name": agent.resolved_purview_context.purview_policy_set_name,
+                    "classification_labels": [c.value for c in agent.resolved_purview_context.classification_labels],
+                    "policy_status": agent.resolved_purview_context.policy_status.value,
+                }
+            
+            return snapshot
+        except Exception as e:
+            logger.error(f"Failed to get agent context snapshot: {e}")
+            return None
+    
     async def run_attack(self, request: AttackRequest) -> AttackResult:
         """
         Execute a single attack through the full pipeline.
@@ -102,6 +161,14 @@ class AttackRunner:
         if request.scenario_id:
             scenario = self._scenario_service.get_scenario(request.scenario_id)
         
+        # Get agent context snapshot if agent_id provided
+        agent_context_snapshot = None
+        policy_modifiers: Optional[AggregatedModifiers] = None
+        if request.agent_id:
+            agent_context_snapshot = self._get_agent_context_snapshot(request.agent_id)
+            if agent_context_snapshot:
+                logger.info(f"Running attack with agent context: {agent_context_snapshot.get('agent_name')}")
+        
         # Create telemetry context
         telemetry_context = self._telemetry.create_context(
             run_id=run_id,
@@ -122,6 +189,18 @@ class AttackRunner:
             
             # Get the prompt - either from custom_prompt or from the scenario
             prompt = request.custom_prompt or (scenario.prompt if scenario else "Test prompt")
+            
+            # ================================================================
+            # POLICY-AWARE STEP: Compute governance modifiers from agent context
+            # ================================================================
+            # Modifiers adjust outcome probabilities based on:
+            # - PolicyProfile (prompt_shield, content_filter_level, sensitive_data_handling)
+            # - DataClassification (confidential/restricted = stricter)
+            # - PurviewGovernanceContext (deny rules, audit requirements)
+            if agent_context_snapshot:
+                policy_modifiers = compute_policy_modifiers(agent_context_snapshot, prompt)
+                if policy_modifiers.governance_notes:
+                    logger.info(f"Governance notes: {policy_modifiers.governance_notes}")
             
             # Initialize tracking variables
             shield_check_result: Optional[SafetyCheckResult] = None
@@ -147,16 +226,46 @@ class AttackRunner:
                     logger.info(f"Prompt blocked by safety layer: {shield_check_result.reason}")
             
             # ================================================================
-            # STEP 3: Call target model (unless blocked by shield)
+            # STEP 3: Call target model (unless blocked by shield or policy)
             # ================================================================
             response_text = ""
+            
+            # Check for policy-forced block BEFORE calling target
+            # DEMO RULE: If policy enforcement requires blocking, skip target call
+            policy_forced_block = policy_modifiers and policy_modifiers.force_block
+            policy_forced_flag = policy_modifiers and policy_modifiers.force_flag
             
             if shield_blocked:
                 # Generate blocked response
                 response_text = f"[BLOCKED] {shield_check_result.explanation}"
+            elif policy_forced_block:
+                # Policy enforcement: Force block due to governance rules
+                # (e.g., exfiltration attempt with sensitive_data_handling=block)
+                logger.info("Policy enforcement: FORCE_BLOCK - skipping target model call")
+                response_text = "[BLOCKED BY POLICY] Request blocked due to data governance policy enforcement."
+            elif policy_forced_flag:
+                # Policy enforcement: Force flag but still need a response
+                logger.info("Policy enforcement: FORCE_FLAG - flagging but proceeding")
+                if self._settings.is_demo_mode:
+                    response_text = random.choice(self.PARTIAL_RESPONSES)
+                    total_latency_ms += random.randint(150, 400)
+                else:
+                    # Call target but mark as flagged
+                    target_connector = get_target_connector()
+                    target_response = await target_connector.send_prompt(
+                        prompt=prompt,
+                        correlation_id=correlation_id,
+                    )
+                    total_latency_ms += target_response.latency_ms
+                    response_text = target_response.response_text or ""
+                    if not target_response.success:
+                        response_text = f"[ERROR] {target_response.error_message}"
             elif self._settings.is_demo_mode:
-                # Demo mode: use mock responses
-                outcome, response_text = self._generate_mock_outcome(request.shield_enabled)
+                # Demo mode: use mock responses with policy-aware adjustments
+                outcome, response_text = self._generate_mock_outcome(
+                    request.shield_enabled,
+                    policy_modifiers=policy_modifiers,
+                )
                 total_latency_ms += random.randint(150, 400)
             else:
                 # Azure mode: call real target model
@@ -187,7 +296,7 @@ class AttackRunner:
                 # Evaluate mock/blocked response
                 evaluation_result = evaluator.evaluate(
                     response_text=response_text,
-                    shield_blocked=shield_blocked,
+                    shield_blocked=shield_blocked or policy_forced_block,  # Include policy block
                     shield_verdict=shield_check_result.to_dict() if shield_check_result else None,
                     error_occurred=False,
                 )
@@ -203,8 +312,16 @@ class AttackRunner:
             model_verdict = self._build_model_verdict(evaluation_result)
             evaluator_verdict = self._build_evaluator_verdict(evaluation_result)
             
-            # Determine overall outcome
-            outcome = self._determine_outcome(evaluation_result, shield_blocked)
+            # Determine overall outcome - policy enforcement takes precedence
+            # DEMO RULE: Policy-forced outcomes override evaluation-based outcome
+            if policy_forced_block:
+                outcome = Outcome.SAFE  # Blocked by policy = safe outcome
+                logger.info("Outcome overridden to SAFE by policy FORCE_BLOCK")
+            elif policy_forced_flag:
+                outcome = Outcome.PARTIAL  # Flagged by policy = partial outcome
+                logger.info("Outcome overridden to PARTIAL by policy FORCE_FLAG")
+            else:
+                outcome = self._determine_outcome(evaluation_result, shield_blocked)
             
             # ================================================================
             # STEP 6: Track telemetry completion
@@ -246,6 +363,8 @@ class AttackRunner:
                 shield_enabled=request.shield_enabled,
                 foundry_resource_name=self._settings.foundry_resource_name or "",
                 deployment_name=self._settings.azure_openai_deployment_name or "",
+                agent_id=request.agent_id,
+                agent_context_snapshot=agent_context_snapshot,
                 shield_verdict=shield_verdict,
                 model_verdict=model_verdict,
                 evaluator_verdict=evaluator_verdict,
@@ -260,6 +379,12 @@ class AttackRunner:
                     "safety_provider": shield_check_result.provider_name if shield_check_result else "none",
                     "evaluation_outcome": evaluation_result.overall_outcome.value,
                     "explanation": evaluation_result.explanation,
+                    # Policy-aware governance metadata
+                    "governance_notes": policy_modifiers.governance_notes if policy_modifiers else [],
+                    "policy_block_adjustment": policy_modifiers.block_probability_delta if policy_modifiers else 0.0,
+                    "policy_flag_adjustment": policy_modifiers.flag_probability_delta if policy_modifiers else 0.0,
+                    "policy_force_block": policy_modifiers.force_block if policy_modifiers else False,
+                    "policy_force_flag": policy_modifiers.force_flag if policy_modifiers else False,
                 }
             )
             
@@ -382,6 +507,13 @@ class AttackRunner:
         start_time = datetime.utcnow()
         start_perf = time.perf_counter()
         
+        # Get agent context snapshot if agent_id provided
+        agent_context_snapshot = None
+        if request.agent_id:
+            agent_context_snapshot = self._get_agent_context_snapshot(request.agent_id)
+            if agent_context_snapshot:
+                logger.info(f"Running campaign with agent context: {agent_context_snapshot.get('agent_name')}")
+        
         # Create telemetry context for campaign
         telemetry_context = self._telemetry.create_context(
             run_id=campaign_id,
@@ -411,6 +543,8 @@ class AttackRunner:
                 created_at=start_time,
                 foundry_resource_name=self._settings.foundry_resource_name or "",
                 deployment_name=self._settings.azure_openai_deployment_name or "",
+                agent_id=request.agent_id,
+                agent_context_snapshot=agent_context_snapshot,
                 target_name=request.target_model,
                 shield_enabled=request.shield_enabled,
                 categories=[request.category] if request.category else [],
@@ -449,6 +583,7 @@ class AttackRunner:
                     target_model=request.target_model,
                     shield_enabled=request.shield_enabled,
                     campaign_id=campaign_id,
+                    agent_id=request.agent_id,
                 )
                 
                 result = await self.run_attack(attack_request)
@@ -546,26 +681,85 @@ class AttackRunner:
             )
             return updated or campaign
     
-    def _generate_mock_outcome(self, shield_enabled: bool) -> tuple[Outcome, str]:
-        """Generate a mock outcome based on whether shield is enabled."""
+    def _generate_mock_outcome(
+        self,
+        shield_enabled: bool,
+        policy_modifiers: Optional[AggregatedModifiers] = None,
+    ) -> tuple[Outcome, str]:
+        """
+        Generate a mock outcome with policy-aware adjustments.
+        
+        DEMO BEHAVIOR:
+        - Base probabilities depend on shield_enabled
+        - Policy modifiers adjust probabilities based on agent context
+        - Force effects from modifiers override random selection
+        
+        BASE PROBABILITIES:
+        - Shield enabled: 80% safe, 10% partial, 10% vulnerable
+        - Shield disabled: 30% safe, 20% partial, 50% vulnerable
+        
+        POLICY ADJUSTMENTS:
+        - block_probability_delta: Added to safe/block chance
+        - flag_probability_delta: Added to partial/flag chance
+        - force_block: Always return SAFE outcome
+        - force_flag: Always return PARTIAL outcome
+        """
+        # Check for forced outcomes from policy modifiers
+        if policy_modifiers:
+            if policy_modifiers.force_block:
+                logger.info("Policy enforcement: FORCE_BLOCK - returning SAFE outcome")
+                return Outcome.SAFE, random.choice(self.SAFE_RESPONSES)
+            if policy_modifiers.force_flag:
+                logger.info("Policy enforcement: FORCE_FLAG - returning PARTIAL outcome")
+                return Outcome.PARTIAL, random.choice(self.PARTIAL_RESPONSES)
+        
+        # Calculate base probabilities
         if shield_enabled:
             # With shield: 80% blocked, 10% partial, 10% passed
-            roll = random.random()
-            if roll < 0.80:
-                return Outcome.SAFE, random.choice(self.SAFE_RESPONSES)
-            elif roll < 0.90:
-                return Outcome.PARTIAL, random.choice(self.PARTIAL_RESPONSES)
-            else:
-                return Outcome.VULNERABLE, random.choice(self.VULNERABLE_RESPONSES)
+            base_safe = 0.80
+            base_partial = 0.10
+            base_vulnerable = 0.10
         else:
             # Without shield: 30% blocked, 20% partial, 50% passed
-            roll = random.random()
-            if roll < 0.30:
-                return Outcome.SAFE, random.choice(self.SAFE_RESPONSES)
-            elif roll < 0.50:
-                return Outcome.PARTIAL, random.choice(self.PARTIAL_RESPONSES)
-            else:
-                return Outcome.VULNERABLE, random.choice(self.VULNERABLE_RESPONSES)
+            base_safe = 0.30
+            base_partial = 0.20
+            base_vulnerable = 0.50
+        
+        # Apply policy modifier adjustments
+        if policy_modifiers:
+            # Block delta increases safe (blocked) probability
+            block_adjustment = policy_modifiers.block_probability_delta
+            # Flag delta increases partial (flagged) probability  
+            flag_adjustment = policy_modifiers.flag_probability_delta
+            
+            # Apply adjustments - take from vulnerable first
+            if block_adjustment > 0:
+                transfer = min(block_adjustment, base_vulnerable)
+                base_safe += transfer
+                base_vulnerable -= transfer
+            if flag_adjustment > 0:
+                transfer = min(flag_adjustment, base_vulnerable)
+                base_partial += transfer
+                base_vulnerable -= transfer
+            
+            # Clamp to valid ranges
+            base_safe = max(0.0, min(1.0, base_safe))
+            base_partial = max(0.0, min(1.0 - base_safe, base_partial))
+            base_vulnerable = max(0.0, 1.0 - base_safe - base_partial)
+            
+            logger.debug(
+                f"Policy-adjusted probabilities: "
+                f"safe={base_safe:.2f}, partial={base_partial:.2f}, vulnerable={base_vulnerable:.2f}"
+            )
+        
+        # Roll outcome
+        roll = random.random()
+        if roll < base_safe:
+            return Outcome.SAFE, random.choice(self.SAFE_RESPONSES)
+        elif roll < base_safe + base_partial:
+            return Outcome.PARTIAL, random.choice(self.PARTIAL_RESPONSES)
+        else:
+            return Outcome.VULNERABLE, random.choice(self.VULNERABLE_RESPONSES)
     
     def _generate_verdict(self, outcome: Outcome, source: str) -> VerdictDetail:
         """Generate a verdict detail based on outcome."""

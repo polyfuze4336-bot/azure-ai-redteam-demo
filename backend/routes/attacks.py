@@ -11,8 +11,9 @@ from models.schemas import (
     CampaignRequest,
     CampaignResult,
     HistoryResponse,
+    UnifiedRunDetails,
 )
-from services import get_attack_runner
+from services import get_attack_runner, get_unified_run_details_service
 from storage import get_store
 
 router = APIRouter(prefix="/api", tags=["attacks"])
@@ -104,6 +105,32 @@ async def get_attack_result(run_id: str) -> AttackResult:
         )
     
     return result
+
+
+@router.get("/history/{run_id}/unified", response_model=UnifiedRunDetails)
+async def get_unified_run_details(run_id: str) -> UnifiedRunDetails:
+    """
+    Get unified run details that merge all context into a single response.
+    
+    Returns a comprehensive view including:
+    - Agent context (who ran it)
+    - Inherited policy profile (what rules applied)
+    - Purview governance context (what data governance was in effect)
+    - Runtime result (what happened)
+    - Linked Defender alerts (what security events occurred)
+    - Linked Purview governance events (what governance actions were taken)
+    - Storyline summary (narrative explaining the complete picture)
+    """
+    service = get_unified_run_details_service()
+    unified = service.get_unified_details(run_id)
+    
+    if not unified:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run not found: {run_id}"
+        )
+    
+    return unified
 
 
 @router.get("/campaigns", response_model=list[CampaignResult])

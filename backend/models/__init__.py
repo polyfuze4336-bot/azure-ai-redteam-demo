@@ -15,6 +15,33 @@ from .schemas import (
     CampaignResult,
     HealthResponse,
     HistoryResponse,
+    # Purview Governance Event Models
+    PurviewEventType,
+    PurviewPolicyAction,
+    PurviewEventStatus,
+    PurviewEventSource,
+    PurviewGovernanceEvent,
+    PurviewEventFilter,
+    PurviewEventResponse,
+    PurviewIngestionStatus,
+    PurviewCorrelationStats,
+    # Purview Correlation Models
+    PurviewCorrelationMethod,
+    PurviewEventCorrelation,
+    LinkedPurviewEvent,
+    PurviewCorrelationRequest,
+    PurviewCorrelationResult,
+    # Shared Correlation Models
+    CorrelationConfidence,
+    # Unified Run Details View Models
+    AgentContextSnapshot,
+    PolicyProfileSnapshot,
+    PurviewGovernanceSnapshot,
+    RuntimeResultSnapshot,
+    LinkedAlertSummary,
+    LinkedGovernanceEventSummary,
+    StorylineSummary,
+    UnifiedRunDetails,
 )
 
 __all__ = [
@@ -30,4 +57,31 @@ __all__ = [
     "CampaignResult",
     "HealthResponse",
     "HistoryResponse",
+    # Purview Governance Event Models
+    "PurviewEventType",
+    "PurviewPolicyAction",
+    "PurviewEventStatus",
+    "PurviewEventSource",
+    "PurviewGovernanceEvent",
+    "PurviewEventFilter",
+    "PurviewEventResponse",
+    "PurviewIngestionStatus",
+    "PurviewCorrelationStats",
+    # Purview Correlation Models
+    "PurviewCorrelationMethod",
+    "PurviewEventCorrelation",
+    "LinkedPurviewEvent",
+    "PurviewCorrelationRequest",
+    "PurviewCorrelationResult",
+    # Shared Correlation Models
+    "CorrelationConfidence",
+    # Unified Run Details View Models
+    "AgentContextSnapshot",
+    "PolicyProfileSnapshot",
+    "PurviewGovernanceSnapshot",
+    "RuntimeResultSnapshot",
+    "LinkedAlertSummary",
+    "LinkedGovernanceEventSummary",
+    "StorylineSummary",
+    "UnifiedRunDetails",
 ]

@@ -31,38 +31,59 @@ logger = get_logger("attack_observer_agent")
 
 @dataclass
 class AttackObservation:
-    """Structured output from the Attack Observer Agent."""
-    
+    """Structured output from the Attack Observer Agent (enhanced)."""
     # Summary fields
     summary: str
     prompt_assessment: str
     outcome_classification: str
-    
+
+    # Agent and context
+    agent_id: str = ""
+    agent_name: str = ""
+    policy_profile_id: str = ""
+    policy_profile_name: str = ""
+    purview_policy_set_id: str = ""
+    purview_policy_set_name: str = ""
+    data_classification: str = ""
+
     # Detailed analysis
-    attack_type: str
-    target_model: str
-    defense_triggered: bool
-    defense_description: str
-    
+    attack_type: str = ""
+    target_model: str = ""
+    defense_triggered: bool = False
+    defense_description: str = ""
+
     # Risk assessment
-    adversarial_indicators: list
-    risk_level: str  # low, medium, high, critical
-    
+    adversarial_indicators: list = None
+    risk_level: str = ""
+
+    # Security signals linkage
+    defender_alert_detected: bool = False
+    purview_event_linked: bool = False
+
     # Demo-friendly narrative
-    client_narrative: str
-    
+    client_narrative: str = ""
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
             "summary": self.summary,
             "prompt_assessment": self.prompt_assessment,
             "outcome_classification": self.outcome_classification,
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "policy_profile_id": self.policy_profile_id,
+            "policy_profile_name": self.policy_profile_name,
+            "purview_policy_set_id": self.purview_policy_set_id,
+            "purview_policy_set_name": self.purview_policy_set_name,
+            "data_classification": self.data_classification,
             "attack_type": self.attack_type,
             "target_model": self.target_model,
             "defense_triggered": self.defense_triggered,
             "defense_description": self.defense_description,
             "adversarial_indicators": self.adversarial_indicators,
             "risk_level": self.risk_level,
+            "defender_alert_detected": self.defender_alert_detected,
+            "purview_event_linked": self.purview_event_linked,
             "client_narrative": self.client_narrative,
         }
 
@@ -193,16 +214,47 @@ def _generate_mock_observation(attack_result: AttackResult) -> AttackObservation
         "suspicious": f"The attack was flagged but not fully blocked. Recommend reviewing the response and tuning policies.",
     }
     
+    # Extract agent and context info
+    agent_id = attack_result.agent_id or ""
+    agent_name = ""
+    policy_profile_id = ""
+    policy_profile_name = ""
+    purview_policy_set_id = ""
+    purview_policy_set_name = ""
+    data_classification = ""
+    if attack_result.agent_context_snapshot:
+        snap = attack_result.agent_context_snapshot
+        agent_id = snap.get("agent_id", agent_id)
+        agent_name = snap.get("agent_name", "")
+        policy_profile_id = snap.get("policy_profile_id", "")
+        policy_profile_name = snap.get("policy_profile_name", "")
+        purview_policy_set_id = snap.get("purview_policy_set_id", "")
+        purview_policy_set_name = snap.get("purview_policy_set_name", "")
+        data_classification = snap.get("data_classification", "")
+
+    # Linked security signals
+    defender_alert_detected = bool(attack_result.linked_defender_alerts)
+    purview_event_linked = bool(attack_result.linked_purview_events)
+
     return AttackObservation(
         summary=summary,
         prompt_assessment=prompt_assessment,
         outcome_classification=outcome_class,
+        agent_id=agent_id,
+        agent_name=agent_name,
+        policy_profile_id=policy_profile_id,
+        policy_profile_name=policy_profile_name,
+        purview_policy_set_id=purview_policy_set_id,
+        purview_policy_set_name=purview_policy_set_name,
+        data_classification=data_classification,
         attack_type=category,
         target_model=attack_result.target_name,
         defense_triggered=defense_triggered,
         defense_description=defense_desc,
         adversarial_indicators=indicators,
         risk_level=risk_level,
+        defender_alert_detected=defender_alert_detected,
+        purview_event_linked=purview_event_linked,
         client_narrative=narratives[outcome_class],
     )
 

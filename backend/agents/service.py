@@ -771,7 +771,6 @@ class AgentService:
                 linked_campaign_id=campaign.campaign_id,
                 output_summary=report.headline,
                 metadata={
-                    "risk_score": report.risk_score,
                     "recommendation_count": len(report.recommendations) if report.recommendations else 0,
                 }
             )

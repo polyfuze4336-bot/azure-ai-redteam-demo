@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from routes import attacks_router, health_router, scenarios_router, comparison_router, pyrit_router, agents_router
+from routes import attacks_router, health_router, scenarios_router, comparison_router, pyrit_router, agents_router, lifecycle_router, defender_alerts_router, purview_governance_router
 from telemetry import setup_logging, get_logger, get_telemetry_service, close_telemetry_service
 from storage import get_store
 from config import get_settings
@@ -148,6 +148,9 @@ app.include_router(scenarios_router)
 app.include_router(comparison_router)
 app.include_router(pyrit_router)
 app.include_router(agents_router)
+app.include_router(lifecycle_router)
+app.include_router(defender_alerts_router)
+app.include_router(purview_governance_router)
 
 
 if __name__ == "__main__":
